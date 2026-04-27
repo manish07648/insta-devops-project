@@ -23,6 +23,7 @@ pipeline {
 
         stage('OWASP Dependency Check') {
             steps {
+                echo "Running OWASP Scan..."
                 dependencyCheck odcInstallation: 'owasp', additionalArguments: '--scan .'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
@@ -32,13 +33,17 @@ pipeline {
             steps {
                 script {
                     def scannerHome = tool 'sonar-scanner'
+
                     withSonarQubeEnv('sonar-server') {
-                        sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.projectKey=insta-project \
-                        -Dsonar.projectName=insta-project \
-                        -Dsonar.sources=.
-                        """
+                        withCredentials([string(credentialsId: 'sonartoken', variable: 'SONAR_TOKEN')]) {
+                            sh """
+                            ${scannerHome}/bin/sonar-scanner \
+                            -Dsonar.projectKey=insta-project \
+                            -Dsonar.projectName=insta-project \
+                            -Dsonar.sources=. \
+                            -Dsonar.login=$SONAR_TOKEN
+                            """
+                        }
                     }
                 }
             }
@@ -46,12 +51,14 @@ pipeline {
 
         stage('Build Docker Images') {
             steps {
+                echo "Building Docker Containers..."
                 sh 'docker compose build'
             }
         }
 
         stage('Trivy Scan') {
             steps {
+                echo "Running Trivy Scan..."
                 sh 'trivy fs .'
             }
         }
@@ -63,10 +70,13 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
+
                     sh '''
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
                     docker tag insta-nginx $DOCKER_IMAGE:latest || true
                     docker tag insta-nginx $DOCKER_IMAGE:$IMAGE_TAG || true
+
                     docker push $DOCKER_IMAGE:latest || true
                     docker push $DOCKER_IMAGE:$IMAGE_TAG || true
                     '''
@@ -76,6 +86,7 @@ pipeline {
 
         stage('Deploy Application') {
             steps {
+                echo "Deploying Application..."
                 sh '''
                 docker compose down || true
                 docker compose up -d --build
@@ -85,18 +96,20 @@ pipeline {
 
         stage('Cleanup') {
             steps {
+                echo "Cleaning Docker Images..."
                 sh 'docker image prune -f'
             }
         }
     }
 
     post {
+
         success {
-            echo 'Pipeline Success'
+            echo "Pipeline Completed Successfully"
         }
 
         failure {
-            echo 'Pipeline Failed'
+            echo "Pipeline Failed"
         }
 
         always {
