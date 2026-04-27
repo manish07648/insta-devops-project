@@ -15,7 +15,6 @@ pipeline {
 
         stage('Code Clone') {
             steps {
-                echo "Cloning latest code..."
                 git branch: 'main',
                 credentialsId: 'githubcreds',
                 url: 'https://github.com/manish07648/insta-devops-project.git'
@@ -24,7 +23,6 @@ pipeline {
 
         stage('OWASP Dependency Check') {
             steps {
-                echo "Running OWASP scan..."
                 dependencyCheck odcInstallation: 'owasp', additionalArguments: '--scan .'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
@@ -32,48 +30,43 @@ pipeline {
 
         stage('SonarQube Scan') {
             steps {
-                echo "Running SonarQube scan..."
-                withSonarQubeEnv('sonar-server') {
-                    sh '''
-                    sonar-scanner \
-                    -Dsonar.projectKey=insta-project \
-                    -Dsonar.projectName=insta-project \
-                    -Dsonar.sources=.
-                    '''
+                script {
+                    def scannerHome = tool 'sonar-scanner'
+                    withSonarQubeEnv('sonar-server') {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=insta-project \
+                        -Dsonar.projectName=insta-project \
+                        -Dsonar.sources=.
+                        """
+                    }
                 }
             }
         }
 
         stage('Build Docker Images') {
             steps {
-                echo "Building docker containers..."
                 sh 'docker compose build'
             }
         }
 
         stage('Trivy Scan') {
             steps {
-                echo "Running Trivy scan..."
                 sh 'trivy fs .'
             }
         }
 
         stage('Docker Hub Push') {
             steps {
-                echo "Pushing image to Docker Hub..."
-
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhubcreds',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-
                     sh '''
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-
                     docker tag insta-nginx $DOCKER_IMAGE:latest || true
                     docker tag insta-nginx $DOCKER_IMAGE:$IMAGE_TAG || true
-
                     docker push $DOCKER_IMAGE:latest || true
                     docker push $DOCKER_IMAGE:$IMAGE_TAG || true
                     '''
@@ -83,7 +76,6 @@ pipeline {
 
         stage('Deploy Application') {
             steps {
-                echo "Deploying application..."
                 sh '''
                 docker compose down || true
                 docker compose up -d --build
@@ -93,20 +85,18 @@ pipeline {
 
         stage('Cleanup') {
             steps {
-                echo "Cleaning unused docker images..."
                 sh 'docker image prune -f'
             }
         }
     }
 
     post {
-
         success {
-            echo "Pipeline completed successfully"
+            echo 'Pipeline Success'
         }
 
         failure {
-            echo "Pipeline failed"
+            echo 'Pipeline Failed'
         }
 
         always {
