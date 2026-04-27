@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "insta-devops-project"
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_NAME   = "insta-devops-project"
+        IMAGE_TAG    = "${BUILD_NUMBER}"
         DOCKER_IMAGE = "manish07648/insta-devops-project"
     }
 
@@ -25,7 +25,7 @@ pipeline {
         stage('OWASP Dependency Check') {
             steps {
                 echo "Running OWASP scan..."
-                dependencyCheck additionalArguments: '--scan .', odcInstallation: 'owasp'
+                dependencyCheck odcInstallation: 'owasp', additionalArguments: '--scan .'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
@@ -46,20 +46,22 @@ pipeline {
 
         stage('Build Docker Images') {
             steps {
-                echo "Building containers..."
+                echo "Building docker containers..."
                 sh 'docker compose build'
             }
         }
 
         stage('Trivy Scan') {
             steps {
-                echo "Scanning images..."
+                echo "Running Trivy scan..."
                 sh 'trivy fs .'
             }
         }
 
         stage('Docker Hub Push') {
             steps {
+                echo "Pushing image to Docker Hub..."
+
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhubcreds',
                     usernameVariable: 'DOCKER_USER',
@@ -68,8 +70,10 @@ pipeline {
 
                     sh '''
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
                     docker tag insta-nginx $DOCKER_IMAGE:latest || true
                     docker tag insta-nginx $DOCKER_IMAGE:$IMAGE_TAG || true
+
                     docker push $DOCKER_IMAGE:latest || true
                     docker push $DOCKER_IMAGE:$IMAGE_TAG || true
                     '''
@@ -79,7 +83,7 @@ pipeline {
 
         stage('Deploy Application') {
             steps {
-                echo "Deploying latest build..."
+                echo "Deploying application..."
                 sh '''
                 docker compose down || true
                 docker compose up -d --build
@@ -89,7 +93,7 @@ pipeline {
 
         stage('Cleanup') {
             steps {
-                echo "Cleaning unused images..."
+                echo "Cleaning unused docker images..."
                 sh 'docker image prune -f'
             }
         }
